@@ -11,7 +11,7 @@ from pathlib import Path
 from flask import Flask, Response, abort, jsonify, render_template, request
 
 from .cache import CommentCache
-from .client import CrawlError, DcClient
+from .client import MAX_WORKERS, CrawlError, DcClient
 from .crawler import MODES, Crawler, CrawlResult
 from .parser import parse_gallery
 from .ranking import SORT_KEYS, build_ranking, ranking_csv, result_json
@@ -52,7 +52,7 @@ def _running() -> Job | None:
 def _run(job: Job) -> None:
     p = job.params
     try:
-        client = DcClient(delay=p["delay"], cancel_event=job.cancel)
+        client = DcClient(delay=p["delay"], workers=p["workers"], cancel_event=job.cancel)
         job.crawler = Crawler(client, progress=job.on_progress, max_pages=p["max_pages"],
                               cache=CommentCache(OUTPUT_DIR / "cache.sqlite3"))
         job.result = job.crawler.run(p["gallery"], p["start"], p["end"], p["mode"])
@@ -83,6 +83,7 @@ def create_job():
             "end": date.fromisoformat(body["end"]),
             "mode": body.get("mode", "both"),
             "delay": max(1.0, float(body.get("delay", 1.0))),
+            "workers": max(1, min(int(body.get("workers", 20)), MAX_WORKERS)),
             "max_pages": max(1, min(int(body.get("max_pages", 300)), 5000)),
         }
         if params["mode"] not in MODES:

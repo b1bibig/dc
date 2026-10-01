@@ -120,12 +120,12 @@ class FakeSession:
         return Resp("not found", 404)
 
 
-def make_client(gallery: FakeGallery, **kw) -> DcClient:
+def make_client(gallery: FakeGallery, workers: int = 1, **kw) -> DcClient:
     now = [0.0]
 
     def sleep(s):
         now[0] += s
 
     session = FakeSession(gallery, **kw)
-    return DcClient(session=session, robots=RobotsPolicy(ROBOTS), delay=1.0, jitter=0,
+    return DcClient(session=session, robots=RobotsPolicy(ROBOTS), delay=1.0, jitter=0, workers=workers,
                     sleep=sleep, clock=lambda: now[0])

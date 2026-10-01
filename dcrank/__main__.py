@@ -18,7 +18,7 @@ def _crawl(args: argparse.Namespace) -> int:
     def progress(p: dict) -> None:
         print(f"\r[요청 {p['requests']:>4}] {p['message']:<60}", end="", file=sys.stderr, flush=True)
 
-    client = DcClient(delay=args.delay)
+    client = DcClient(delay=args.delay, workers=args.workers)
     cache = CommentCache(Path(args.out) / "cache.sqlite3")
     crawler = Crawler(client, progress=progress, max_pages=args.max_pages, cache=cache)
     try:
@@ -61,7 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--mode", choices=MODES, default="both")
     c.add_argument("--sort", choices=tuple(SORT_KEYS), default="total")
     c.add_argument("--merge-ip", action="store_true", help="유동을 하나로 합쳐 집계")
-    c.add_argument("--delay", type=float, default=1.0, help="요청 간격(초, 최소 1)")
+    c.add_argument("--workers", type=int, default=20, help="동시 요청 수 (1~20)")
+    c.add_argument("--delay", type=float, default=1.0, help="작업자 하나당 요청 간격(초, 최소 1)")
     c.add_argument("--max-pages", type=int, default=300, help="글 목록 페이지 상한")
     c.add_argument("--top", type=int, default=50)
     c.add_argument("--out", default="output")

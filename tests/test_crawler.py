@@ -99,3 +99,43 @@ def test_comment_cache_skips_unchanged_posts(tmp_path):
     assert second.cached_posts > 0
     key = lambda c: (c.post_no, c.no, c.date, c.writer)
     assert sorted(map(key, second.comments)) == sorted(map(key, first.comments))
+
+
+def _snapshot(res):
+    return (
+        sorted(p.no for p in res.posts),
+        sorted((c.post_no, c.no, c.date, c.writer) for c in res.comments),
+    )
+
+
+def test_parallel_matches_sequential():
+    g = FakeGallery()
+    seq = Crawler(make_client(g)).run(Gallery("testgall"), date(2026, 9, 20), date(2026, 9, 22), "both")
+    for workers in (4, 20):
+        client = make_client(g, workers=workers)
+        par = Crawler(client).run(Gallery("testgall"), date(2026, 9, 20), date(2026, 9, 22), "both")
+        assert par.complete
+        assert _snapshot(par) == _snapshot(seq)
+
+
+def test_parallel_stops_on_403():
+    from tests.fakes import Resp
+
+    g = FakeGallery()
+    client = make_client(g, workers=8)
+    real = client.session.request
+    posts_seen = []
+
+    def flaky(method, url, **kw):
+        if method == "POST":
+            posts_seen.append(url)
+            if len(posts_seen) == 5:
+                return Resp(status=403)
+        return real(method, url, **kw)
+
+    client.session.request = flaky
+    res = Crawler(client).run(Gallery("testgall"), date(2026, 9, 1), date(2026, 9, 30), "both")
+    assert not res.complete
+    assert any("403" in w for w in res.warnings)
+    targets = sum(1 for p in res.posts if p.comment_count)
+    assert len(posts_seen) < targets  # 나머지 글은 요청하지 않음

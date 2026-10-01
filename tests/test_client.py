@@ -58,3 +58,35 @@ def test_robots_blocked_url_never_requested():
 def test_delay_minimum():
     with pytest.raises(ValueError):
         DcClient(delay=0.2, robots=RobotsPolicy(""))
+
+
+def test_workers_share_rate_limit():
+    now = [0.0]
+
+    def sleep(s):
+        now[0] += s
+
+    c = DcClient(session=Seq([Resp("x")] * 8), robots=RobotsPolicy(ROBOTS), delay=1.0, jitter=0, workers=4,
+                 sleep=sleep, clock=lambda: now[0])
+    for _ in range(8):
+        c.get("https://gall.dcinside.com/board/lists/?id=x")
+    assert now[0] == pytest.approx(7 * 0.25)  # 4개 작업자 = 초당 4회
+
+
+def test_429_slows_everyone_down():
+    now = [0.0]
+
+    def sleep(s):
+        now[0] += s
+
+    c = DcClient(session=Seq([Resp(status=429, headers={"Retry-After": "10"}), Resp("ok")]), robots=RobotsPolicy(ROBOTS),
+                 delay=1.0, jitter=0, workers=8, sleep=sleep, clock=lambda: now[0])
+    assert c.get("https://gall.dcinside.com/board/lists/?id=x").text == "ok"
+    assert c.throttled == 1 and c._slowdown == 2.0 and now[0] >= 10
+
+
+def test_workers_bounds():
+    with pytest.raises(ValueError):
+        DcClient(workers=0, robots=RobotsPolicy(""))
+    with pytest.raises(ValueError):
+        DcClient(workers=21, robots=RobotsPolicy(""))

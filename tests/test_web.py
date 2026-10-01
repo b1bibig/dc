@@ -25,7 +25,7 @@ def test_one_click_flow(monkeypatch, tmp_path):
 
 
 def _with_cancel(g, kw):
-    client = make_client(g)
+    client = make_client(g, workers=kw["workers"])
     client.cancel_event = kw["cancel_event"]
     return client
 
