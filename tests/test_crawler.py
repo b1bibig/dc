@@ -82,3 +82,20 @@ def test_range_older_than_gallery_stops_at_last_page():
     g = FakeGallery(n=250)
     res = Crawler(make_client(g)).run(Gallery("testgall"), date(2020, 1, 1), date(2026, 9, 30), "posts")
     assert len(res.posts) == 250 and res.complete
+
+
+def test_comment_cache_skips_unchanged_posts(tmp_path):
+    from dcrank.cache import CommentCache
+
+    g = FakeGallery()
+    cache = CommentCache(tmp_path / "c.sqlite3")
+    first_client = make_client(g)
+    first = Crawler(first_client, cache=cache).run(Gallery("testgall"), date(2026, 9, 29), date(2026, 9, 30), "both")
+    assert any(m == "POST" for m, _ in first_client.session.calls)
+
+    second_client = make_client(g)
+    second = Crawler(second_client, cache=cache).run(Gallery("testgall"), date(2026, 9, 29), date(2026, 9, 30), "both")
+    assert not any(m == "POST" for m, _ in second_client.session.calls)
+    assert second.cached_posts > 0
+    key = lambda c: (c.post_no, c.no, c.date, c.writer)
+    assert sorted(map(key, second.comments)) == sorted(map(key, first.comments))

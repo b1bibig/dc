@@ -105,7 +105,8 @@ class FakeSession:
             assert data["e_s_n_o"] == "ESNO123"
             assert data["_GALLTYPE_"] == self.g.kind
             comments = self.g.comments_for(int(data["no"]))
-            return Resp(json.dumps({"total_cnt": len(comments) - 1, "comments": comments}) if comments else "")
+            # 실제처럼 total_cnt는 댓글돌이까지 센 값
+            return Resp(json.dumps({"total_cnt": len(comments), "comments": comments}) if comments else "")
         if parts.path.endswith("/board/lists/"):
             prefix = {"G": "/board", "M": "/mgallery/board", "MI": "/mini/board"}[self.g.kind]
             if not parts.path.startswith(prefix):

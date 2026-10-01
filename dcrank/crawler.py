@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
+from time import monotonic as clock
 from typing import Callable
 
+from .cache import CommentCache
 from .client import BASE, CrawlError, DcClient, DisallowedError
 from .parser import Comment, Gallery, ListPage, Post, parse_comments, parse_list_page
 
@@ -27,12 +29,21 @@ class CrawlResult:
     comments: list[Comment] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     requests: int = 0
+    cached_posts: int = 0
     complete: bool = True
 
 
 class Crawler:
-    def __init__(self, client: DcClient, progress: Progress | None = None, max_pages: int = 300):
+    def __init__(
+        self,
+        client: DcClient,
+        progress: Progress | None = None,
+        max_pages: int = 300,
+        cache: CommentCache | None = None,
+    ):
         self.client = client
+        self.cache = cache
+        self.result: CrawlResult | None = None  # 수집 중에도 지금까지 모인 결과를 볼 수 있게
         self.progress = progress or (lambda _: None)
         self.max_pages = max_pages
         self._pages: dict[int, ListPage] = {}
@@ -122,6 +133,7 @@ class Crawler:
     def _fetch_comments(self, post: Post) -> list[Comment]:
         g = self.gallery
         out: dict[int, Comment] = {}
+        raw_seen = 0  # 댓글돌이·삭제 댓글 포함 개수. total_cnt와는 이걸로 비교해야 헛요청이 없다
         retried = False
         page = 1
         while page <= 50:
@@ -157,29 +169,49 @@ class Crawler:
                 self._page(1)
                 continue
             comments, total = parse_comments(data, post)
+            raw = data.get("comments") or []
+            raw_seen += len(raw)
             before = len(out)
             for c in comments:
                 out[c.no] = c
-            if len(out) == before or len(out) >= total or not data.get("comments"):
+            if not raw or raw_seen >= total or (len(out) == before and page > 1):
                 break
             page += 1
         return list(out.values())
 
     def _collect_comments(self, result: CrawlResult, start_dt: datetime, end_dt: datetime) -> None:
         targets = [p for p in result.posts if p.comment_count > 0]
-        skipped = 0
+        skipped = cached = 0
+        g = self.gallery
+        started, req0 = clock(), self.client.request_count
         for i, post in enumerate(targets, 1):
-            g = self.gallery
             if not (self.client.allowed(g.view_url(post.no)) and self.client.allowed(g.comment_view_url(post.no))):
                 skipped += 1
                 continue
-            try:
-                comments = self._fetch_comments(post)
-            except DisallowedError:
-                skipped += 1
-                continue
+            comments = self.cache.get(g.id, post.no, post.comment_count) if self.cache else None
+            if comments is not None:
+                cached += 1
+            else:
+                try:
+                    comments = self._fetch_comments(post)
+                except DisallowedError:
+                    skipped += 1
+                    continue
+                if self.cache:
+                    self.cache.put(g.id, post.no, post.comment_count, comments)
             result.comments.extend(c for c in comments if start_dt <= c.date <= end_dt)
-            self._report("comments", f"댓글 수집 {i}/{len(targets)} · 범위 내 댓글 {len(result.comments)}개", i, len(targets))
+            fetched = i - cached - skipped
+            eta = ""
+            if fetched:
+                per_post = (clock() - started) / fetched
+                eta = f" · 남은 시간 약 {max(1, round(per_post * (len(targets) - i) / 60))}분"
+            self._report(
+                "comments",
+                f"댓글 {i}/{len(targets)}글 · 범위 내 댓글 {len(result.comments)}개 · 캐시 {cached}{eta}",
+                i,
+                len(targets),
+            )
+        result.cached_posts = cached
         if skipped:
             result.warnings.append(f"robots.txt가 막은 글 {skipped}개는 댓글을 수집하지 않았습니다.")
 
@@ -193,7 +225,7 @@ class Crawler:
         end_dt = datetime.combine(end, time.max)
         self._report("init", "robots.txt 확인 · 갤러리 확인 중…")
         self._resolve_gallery(gallery)
-        result = CrawlResult(self.gallery, start, end, mode)
+        result = self.result = CrawlResult(self.gallery, start, end, mode)
         try:
             self._collect_posts(result, start_dt, end_dt)
             if mode in ("comments", "both"):

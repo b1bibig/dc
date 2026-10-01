@@ -10,6 +10,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, render_template, request
 
+from .cache import CommentCache
 from .client import CrawlError, DcClient
 from .crawler import MODES, Crawler, CrawlResult
 from .parser import parse_gallery
@@ -28,6 +29,7 @@ class Job:
         self.progress: dict = {"message": "준비 중…", "done": 0, "total": 0, "requests": 0}
         self.log: list[str] = []
         self.result: CrawlResult | None = None
+        self.crawler: Crawler | None = None
         self.error = ""
         self.saved_path = ""
         self.cancel = threading.Event()
@@ -51,8 +53,9 @@ def _run(job: Job) -> None:
     p = job.params
     try:
         client = DcClient(delay=p["delay"], cancel_event=job.cancel)
-        crawler = Crawler(client, progress=job.on_progress, max_pages=p["max_pages"])
-        job.result = crawler.run(p["gallery"], p["start"], p["end"], p["mode"])
+        job.crawler = Crawler(client, progress=job.on_progress, max_pages=p["max_pages"],
+                              cache=CommentCache(OUTPUT_DIR / "cache.sqlite3"))
+        job.result = job.crawler.run(p["gallery"], p["start"], p["end"], p["mode"])
         OUTPUT_DIR.mkdir(exist_ok=True)
         r = job.result
         path = OUTPUT_DIR / f"{r.gallery.id}_{r.start}_{r.end}_{r.mode}.json"
@@ -79,7 +82,7 @@ def create_job():
             "start": date.fromisoformat(body["start"]),
             "end": date.fromisoformat(body["end"]),
             "mode": body.get("mode", "both"),
-            "delay": max(1.0, float(body.get("delay", 1.5))),
+            "delay": max(1.0, float(body.get("delay", 1.0))),
             "max_pages": max(1, min(int(body.get("max_pages", 300)), 5000)),
         }
         if params["mode"] not in MODES:
@@ -108,8 +111,9 @@ def _job_or_404(job_id: str) -> Job:
 def job_status(job_id: str):
     job = _job_or_404(job_id)
     out = {"status": job.status, "progress": job.progress, "log": job.log[-30:], "error": job.error}
-    if job.result is not None:
-        r = job.result
+    # 수집 중에도 지금까지 모인 것으로 순위를 보여준다
+    r = job.result or (job.crawler.result if job.crawler else None)
+    if r is not None:
         sort = request.args.get("sort", "total")
         rows = build_ranking(r, sort=sort if sort in SORT_KEYS else "total", merge_ip=request.args.get("merge_ip") == "1")
         out.update(
@@ -119,7 +123,8 @@ def job_status(job_id: str):
             warnings=r.warnings,
             post_count=len(r.posts),
             comment_count=len(r.comments),
-            requests=r.requests,
+            requests=r.requests or job.progress.get("requests", 0),
+            cached_posts=r.cached_posts,
             saved_path=job.saved_path,
             rows=[
                 {"rank": x.rank, "nick": x.nick, "ident": x.ident, "kind": x.kind,

@@ -1,7 +1,7 @@
 """요청 간격·robots.txt·차단 응답을 지키는 HTTP 클라이언트.
 
 원칙
-- 요청은 한 번에 하나씩, 기본 1.5초(+무작위 0~0.5초) 간격.
+- 요청은 한 번에 하나씩, 기본 1초(+무작위 0~0.3초) 간격. 1초 미만은 허용하지 않는다.
 - robots.txt가 막은 URL은 요청하지 않는다.
 - 403은 즉시 중단, 429/5xx는 Retry-After(없으면 지수 백오프)만큼 쉬고 재시도,
   그래도 안 되면 중단한다. 프록시 교체·캡차 우회 같은 회피는 하지 않는다.
@@ -43,8 +43,8 @@ class DcClient:
     def __init__(
         self,
         user_agent: str = DEFAULT_USER_AGENT,
-        delay: float = 1.5,
-        jitter: float = 0.5,
+        delay: float = 1.0,
+        jitter: float = 0.3,
         max_retries: int = 3,
         timeout: float = 15.0,
         session: requests.Session | None = None,

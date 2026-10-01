@@ -111,7 +111,7 @@
       <div class="grid" style="margin-top:10px">
         <div>
           <label for="delay">요청 간격(초, 최소 1)</label>
-          <input type="number" id="delay" min="1" step="0.5" value="1.5">
+          <input type="number" id="delay" min="1" step="0.5" value="1">
         </div>
         <div>
           <label for="maxPages">글 목록 페이지 상한 (100개/쪽)</label>
@@ -225,7 +225,11 @@ async function poll() {
   if (p.total) { bar.classList.remove("indet"); bar.firstElementChild.style.width = `${(100 * p.done / p.total).toFixed(1)}%`; }
   else { bar.classList.add("indet"); bar.firstElementChild.style.width = ""; }
 
-  if (d.status === "running") { timer = setTimeout(poll, 1000); return; }
+  if (d.status === "running") {
+    if (d.rows && d.rows.length) renderResult(d, true);
+    timer = setTimeout(poll, 1000);
+    return;
+  }
   $("go").disabled = false;
   $("cancel").disabled = true;
   $("cancel").classList.add("hidden");
@@ -239,14 +243,18 @@ async function poll() {
   renderResult(d);
 }
 
-function renderResult(d) {
+function renderResult(d, partial = false) {
   $("resultCard").classList.remove("hidden");
   const modeName = { posts: "글", comments: "댓글", both: "글 + 댓글" }[d.mode];
   $("summary").textContent =
+    (partial ? "[수집 중 · 중간 집계] " : "") +
     `${d.gallery} · ${$("start").value} ~ ${$("end").value} · ${modeName} · 글 ${d.post_count}개 / 댓글 ${d.comment_count}개 · 작성자 ${d.rows.length}명 · 요청 ${d.requests}회` +
+    (d.cached_posts ? ` · 캐시 재사용 ${d.cached_posts}글` : "") +
     (d.saved_path ? ` · 저장: ${d.saved_path}` : "");
   const w = $("warnings"); w.innerHTML = "";
   (d.warnings || []).forEach((t) => { const div = document.createElement("div"); div.className = "warn"; div.textContent = t; w.append(div); });
+  $("csv").classList.toggle("hidden", partial);
+  $("json").classList.toggle("hidden", partial);
   $("csv").href = `/api/jobs/${jobId}/ranking.csv?${opts()}`;
   $("json").href = `/api/jobs/${jobId}/raw.json`;
   const tbody = $("rows"); tbody.innerHTML = "";

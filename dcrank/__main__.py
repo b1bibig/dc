@@ -7,6 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from .cache import CommentCache
 from .client import CrawlError, DcClient
 from .crawler import MODES, Crawler
 from .parser import parse_gallery
@@ -18,7 +19,8 @@ def _crawl(args: argparse.Namespace) -> int:
         print(f"\r[요청 {p['requests']:>4}] {p['message']:<60}", end="", file=sys.stderr, flush=True)
 
     client = DcClient(delay=args.delay)
-    crawler = Crawler(client, progress=progress, max_pages=args.max_pages)
+    cache = CommentCache(Path(args.out) / "cache.sqlite3")
+    crawler = Crawler(client, progress=progress, max_pages=args.max_pages, cache=cache)
     try:
         result = crawler.run(parse_gallery(args.gallery), args.start, args.end, args.mode)
     except (CrawlError, ValueError) as exc:
@@ -59,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--mode", choices=MODES, default="both")
     c.add_argument("--sort", choices=tuple(SORT_KEYS), default="total")
     c.add_argument("--merge-ip", action="store_true", help="유동을 하나로 합쳐 집계")
-    c.add_argument("--delay", type=float, default=1.5, help="요청 간격(초, 최소 1)")
+    c.add_argument("--delay", type=float, default=1.0, help="요청 간격(초, 최소 1)")
     c.add_argument("--max-pages", type=int, default=300, help="글 목록 페이지 상한")
     c.add_argument("--top", type=int, default=50)
     c.add_argument("--out", default="output")
