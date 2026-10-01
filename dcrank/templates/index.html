@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>갤창랭킹</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #667085; --line: #e3e6ea;
+    --accent: #3b5bdb; --accent-text: #ffffff; --warn-bg: #fff7e6; --warn: #8a5a00; --err: #c92a2a;
+    --gold: #d4a017; --silver: #8e9aa6; --bronze: #b0703c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --panel: #1a1e24; --text: #e6e8eb; --muted: #98a2b3; --line: #2c323b;
+      --accent: #7491ff; --accent-text: #0b0d10; --warn-bg: #2d2412; --warn: #f0c36d; --err: #ff8787;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=date], input[type=number] {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; }
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  .full { grid-column: 1 / -1; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg input { display: none; }
+  .seg label { flex: 1; text-align: center; margin: 0; padding: 9px 0; cursor: pointer; color: var(--text); font-size: 14px; }
+  .seg input:checked + label { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px;
+          padding: 2px 10px; font-size: 12px; cursor: pointer; }
+  details { margin-top: 12px; font-size: 13px; }
+  summary { cursor: pointer; color: var(--muted); }
+  button.primary { width: 100%; margin-top: 16px; padding: 12px; border: 0; border-radius: 10px;
+                   background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 700; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .ghost { border: 1px solid var(--line); background: transparent; color: var(--text);
+                 padding: 6px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .bar.indet > div { width: 30%; animation: slide 1.2s infinite ease-in-out; }
+  @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+  #log { font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); max-height: 140px; overflow: auto; white-space: pre-wrap; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 8px 0; }
+  .err { color: var(--err); font-weight: 600; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .toolbar .seg { flex: none; }
+  .toolbar .seg label { padding: 5px 14px; font-size: 13px; white-space: nowrap; }
+  a.ghost { text-decoration: none; }
+  .stats { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.rank { font-weight: 700; width: 44px; }
+  tr.r1 td.rank { color: var(--gold); } tr.r2 td.rank { color: var(--silver); } tr.r3 td.rank { color: var(--bronze); }
+  .ident { color: var(--muted); font-size: 12px; }
+  .kind { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+  .hidden { display: none; }
+  @media (max-width: 560px) {
+    .grid { grid-template-columns: 1fr; }
+    th, td { padding: 6px 4px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>갤창랭킹</h1>
+  <p class="sub">특정 갤러리의 기간 내 글·댓글을 모아 작성자 순위를 냅니다. robots.txt를 지키고 요청은 하나씩 천천히 보냅니다.</p>
+
+  <form class="card" id="form">
+    <div class="grid">
+      <div class="full">
+        <label for="gallery">갤러리 ID 또는 주소</label>
+        <input type="text" id="gallery" placeholder="programming 또는 https://gall.dcinside.com/mgallery/board/lists/?id=..." required>
+      </div>
+      <div>
+        <label for="start">시작일</label>
+        <input type="date" id="start" required>
+      </div>
+      <div>
+        <label for="end">종료일</label>
+        <input type="date" id="end" required>
+      </div>
+      <div class="full presets">
+        <button type="button" class="chip" data-days="0">오늘</button>
+        <button type="button" class="chip" data-days="1">어제</button>
+        <button type="button" class="chip" data-days="7">최근 7일</button>
+        <button type="button" class="chip" data-days="30">최근 30일</button>
+        <button type="button" class="chip" data-month="prev">지난달</button>
+      </div>
+      <div class="full">
+        <label>수집 대상</label>
+        <div class="seg">
+          <input type="radio" name="mode" id="m-posts" value="posts"><label for="m-posts">글</label>
+          <input type="radio" name="mode" id="m-comments" value="comments"><label for="m-comments">댓글</label>
+          <input type="radio" name="mode" id="m-both" value="both" checked><label for="m-both">글 + 댓글</label>
+        </div>
+      </div>
+    </div>
+    <details>
+      <summary>고급 설정</summary>
+      <div class="grid" style="margin-top:10px">
+        <div>
+          <label for="delay">요청 간격(초, 최소 1)</label>
+          <input type="number" id="delay" min="1" step="0.5" value="1.5">
+        </div>
+        <div>
+          <label for="maxPages">글 목록 페이지 상한 (100개/쪽)</label>
+          <input type="number" id="maxPages" min="1" max="5000" value="300">
+        </div>
+      </div>
+    </details>
+    <button class="primary" id="go" type="submit">랭킹 뽑기</button>
+  </form>
+
+  <section class="card hidden" id="progressCard">
+    <div class="toolbar" style="justify-content:space-between;margin:0">
+      <strong id="progressMsg">준비 중…</strong>
+      <button class="ghost" id="cancel" type="button">중단</button>
+    </div>
+    <div class="bar indet" id="bar"><div></div></div>
+    <div class="stats" id="progressStats"></div>
+    <div id="log"></div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <div class="stats" id="summary"></div>
+    <div id="warnings"></div>
+    <div class="toolbar">
+      <div class="seg" id="sortSeg">
+        <input type="radio" name="sort" id="s-total" value="total" checked><label for="s-total">합계</label>
+        <input type="radio" name="sort" id="s-posts" value="posts"><label for="s-posts">글</label>
+        <input type="radio" name="sort" id="s-comments" value="comments"><label for="s-comments">댓글</label>
+      </div>
+      <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--text)">
+        <input type="checkbox" id="mergeIp"> 유동 하나로 합치기
+      </label>
+      <span style="flex:1"></span>
+      <a class="ghost" id="csv" href="#">CSV</a>
+      <a class="ghost" id="json" href="#">원본 JSON</a>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>작성자</th><th>구분</th><th class="num">글</th><th class="num">댓글</th><th class="num">합계</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (d) => d.toISOString().slice(0, 10);
+const today = new Date("{{ today }}T00:00:00Z");
+let jobId = null, timer = null;
+
+function setRange(a, b) { $("start").value = fmt(a); $("end").value = fmt(b); }
+setRange(new Date(today - 6 * 864e5), today);
+document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+  if (c.dataset.month === "prev") {
+    const first = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const last = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+    return setRange(first, last);
+  }
+  const n = +c.dataset.days;
+  if (n === 1) { const y = new Date(today - 864e5); return setRange(y, y); }
+  setRange(new Date(today - Math.max(n - 1, 0) * 864e5), today);
+}));
+
+try { const g = localStorage.getItem("dcrank.gallery"); if (g) $("gallery").value = g; } catch (e) {}
+
+function opts() {
+  const sort = document.querySelector("input[name=sort]:checked").value;
+  return `sort=${sort}&merge_ip=${$("mergeIp").checked ? 1 : 0}`;
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { localStorage.setItem("dcrank.gallery", $("gallery").value); } catch (e) {}
+  const body = {
+    gallery: $("gallery").value, start: $("start").value, end: $("end").value,
+    mode: document.querySelector("input[name=mode]:checked").value,
+    delay: +$("delay").value, max_pages: +$("maxPages").value,
+  };
+  const res = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error); return; }
+  jobId = data.id;
+  $("go").disabled = true;
+  $("resultCard").classList.add("hidden");
+  $("progressCard").classList.remove("hidden");
+  $("cancel").disabled = false;
+  $("cancel").classList.remove("hidden");
+  $("log").textContent = "";
+  poll();
+});
+
+$("cancel").addEventListener("click", async () => {
+  if (!jobId) return;
+  $("cancel").disabled = true;
+  await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+});
+document.querySelectorAll("input[name=sort]").forEach((r) => r.addEventListener("change", poll));
+$("mergeIp").addEventListener("change", poll);
+
+async function poll() {
+  clearTimeout(timer);
+  if (!jobId) return;
+  const res = await fetch(`/api/jobs/${jobId}?${opts()}`);
+  const d = await res.json();
+  const p = d.progress || {};
+  $("progressMsg").textContent = d.status === "error" ? "오류" : (p.message || "");
+  $("progressStats").textContent = `요청 ${p.requests || 0}회`;
+  $("log").textContent = (d.log || []).join("\n");
+  $("log").scrollTop = $("log").scrollHeight;
+  const bar = $("bar");
+  if (p.total) { bar.classList.remove("indet"); bar.firstElementChild.style.width = `${(100 * p.done / p.total).toFixed(1)}%`; }
+  else { bar.classList.add("indet"); bar.firstElementChild.style.width = ""; }
+
+  if (d.status === "running") { timer = setTimeout(poll, 1000); return; }
+  $("go").disabled = false;
+  $("cancel").disabled = true;
+  $("cancel").classList.add("hidden");
+  bar.classList.remove("indet");
+  bar.firstElementChild.style.width = "100%";
+  if (d.status === "error") {
+    $("log").innerHTML = "";
+    const div = document.createElement("div"); div.className = "err"; div.textContent = d.error; $("log").append(div);
+    return;
+  }
+  renderResult(d);
+}
+
+function renderResult(d) {
+  $("resultCard").classList.remove("hidden");
+  const modeName = { posts: "글", comments: "댓글", both: "글 + 댓글" }[d.mode];
+  $("summary").textContent =
+    `${d.gallery} · ${$("start").value} ~ ${$("end").value} · ${modeName} · 글 ${d.post_count}개 / 댓글 ${d.comment_count}개 · 작성자 ${d.rows.length}명 · 요청 ${d.requests}회` +
+    (d.saved_path ? ` · 저장: ${d.saved_path}` : "");
+  const w = $("warnings"); w.innerHTML = "";
+  (d.warnings || []).forEach((t) => { const div = document.createElement("div"); div.className = "warn"; div.textContent = t; w.append(div); });
+  $("csv").href = `/api/jobs/${jobId}/ranking.csv?${opts()}`;
+  $("json").href = `/api/jobs/${jobId}/raw.json`;
+  const tbody = $("rows"); tbody.innerHTML = "";
+  d.rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    if (r.rank <= 3) tr.className = `r${r.rank}`;
+    const cells = [
+      [r.rank, "rank"], [null, ""], [null, ""], [r.posts, "num"], [r.comments, "num"], [r.total, "num"],
+    ];
+    cells.forEach(([v, cls]) => { const td = document.createElement("td"); td.className = cls; if (v !== null) td.textContent = v; tr.append(td); });
+    const who = tr.children[1];
+    who.append(document.createTextNode(r.nick || "(이름 없음)"));
+    if (r.ident) { const s = document.createElement("span"); s.className = "ident"; s.textContent = ` (${r.ident})`; who.append(s); }
+    const k = document.createElement("span"); k.className = "kind"; k.textContent = r.kind; tr.children[2].append(k);
+    tbody.append(tr);
+  });
+}
+</script>
+</body>
+</html>
